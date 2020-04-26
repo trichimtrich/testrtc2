@@ -153,11 +153,14 @@ This repo is used for blackbox testing between clients, not to claim and disclai
 - ICE candidates should be transfer at least from 1 peer to another to make successful connection. But very stable when both parties exchange their local ICE candidates.
 - Add transreceiver is not neccessary needed to send/recv tracks.
 - After successful connection between parties, any party can createOffer to other.
+- `offerToReceiveVideo` and `offerToReceiveAudio` work as expected.
 - Media provider should be the one createOffer.
 - Media track should be added before createOffer.
 - Added media tracks will not send immediately, need renegotiation (createOffer -> createAnswer).
 - Same thing with DataChannel
-- Restart Ice does not work
+- Restart Ice does not work, and asks for renegotiation.
+
+This result was conducted between Web - Go Client in Chrome/Safari/Firefox on MacOS.
 
 ## TODO
 
@@ -167,3 +170,4 @@ This repo is used for blackbox testing between clients, not to claim and disclai
 - replaceTrack
 - codec(?)
 - view and edit SDP(?)
+- stats
