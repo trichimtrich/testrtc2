@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>WebRTC Demo</title>
+    <style>
+        @media only screen and (min-width: 1000px) {
+            body {
+                margin: 0;
+            }
+            #left-panel {
+                display: block;
+                position: fixed;
+                /* background-color: red; */
+                width: 30%;
+                height: 100%;
+                float: left;
+                overflow: scroll;
+            }
+
+            #log-panel {
+                display: block;
+                position: fixed;
+                left: 30%;
+                width: 70%;
+                height: 100%;
+                /* background-color: green; */
+                overflow: scroll;
+            }
+        }
+
+
+
+    </style>
+</head>
+
+<body>
+    <div id="left-panel">
+        <h3 id="lblID">My ID: - Peer ID: </h3>
+        <h3 id="lblRTC">WebRTC state: </h2>
+        <h3 id="lblMedia">Recv Audio: 0 - Recv Video: 0</h3>
+        <div id="boxMediaIn"></div>
+        <h3 id="lblData">Data Channel: 0</h3>
+        <p>
+            1. Signal server:
+            <input type="text" id="txtWS" value="ws://192.168.1.102:6789/">
+            <button onclick="initWebSocket()">New WebSocket</button>
+            <button id="btnWSClose" onclick="resetWebSocket()" disabled>Disconnect</button>
+        </p>
+        <p>
+            2. PeerID:
+            <input type="text" id="txtPeer">
+            <button id="btnPing" onclick="ping()" disabled>Ping</button>
+        </p>
+        <p>
+            3. WebRTC:
+            <button onclick="initWebRTC()">New PeerConnection</button>
+            <button id="btnRTCClose" onclick="resetWebRTC()" disabled>Close</button>
+        </p>
+        <p>
+            4. Transceiver:
+            <select id="txtKind">
+                <option value="audio">audio</option>
+                <option value="video">video</option>
+            </select>
+            <button id="btnSendRecv" onclick="addTransceiver('sendrecv')" disabled>sendrecv</button>
+            <button id="btnSendOnly" onclick="addTransceiver('sendonly')" disabled>sendonly</button>
+            <button id="btnRecvOnly"onclick="addTransceiver('recvonly')" disabled>recvonly</button>
+        </p>
+        <p>
+            5. Role:
+            <input type="checkbox" id="chkOfferAudio" name="chkOfferAudio" checked>
+            <label for="chkOfferAudio">offerToReceiveAudio</label>
+            <input type="checkbox" id="chkOfferVideo" name="chkOfferVideo" checked>
+            <label for="chkOfferVideo">offerToReceiveVideo</label><br>
+            <button id="btnCreateOffer" onclick="createOffer()" disabled>Create Offer</button>
+            <button id="btnCreateAnswer" onclick="createAnswer()" disabled>Create Answer</button>
+            <button id="btnSendSDP" onclick="sendSDP()" disabled>Send SDP To Peer</button>
+
+        </p>
+        <p>
+            6. IceCandidate:
+            <button id="btnSendIce" onclick="sendIce()" disabled>Send Ice To Peer</button>
+            <button id="btnAddIce" onclick="addIce()" disabled>Add Ice From Peer</button>
+            <button id="btnRestartIce" onclick="restartIce()" disabled>Restart Ice</button>
+        </p>
+        <p>
+            7. Media Stream:
+            <button id="btnRemoveTracks" onclick="removeTracks()" disabled>Remove All Tracks</button><br>
+            <button id="btnAddVideo" onclick="addMedia('video')" disabled>Add Video</button>
+            <button id="btnAddAudio" onclick="addMedia('audio')" disabled>Add Audio</button>
+            <button id="btnAddWebCam" onclick="addWebCam()" disabled>Add WebCam</button>
+            <button id="btnAddMic" onclick="addMic()" disabled>Add Microphone</button>
+        </p>
+        <p>
+            8. DataChannel
+            <button id="btnAddChannel" onclick="addChannel()" disabled>Add Channel</button>
+            <button id="btnRemoveChannels" onclick="removeChannels()" disabled>Close All Channels</button>
+        </p>
+        <div id="boxMediaOut"></div>
+    </div>
+
+    <div id="log-panel"></div>
+
+    <script>
+        let websocket = null; 
+        let userID;
+        let peerID;
+
+        let pc = null;
+        let rtcState;
+        let localCandidates = Array();
+        let remoteCandidates = Array();
+        let trackSenders = Array();
+        let channels = Array();
+
+        function writeLabels() {
+            document.getElementById('lblID').innerHTML =
+                `My ID: ${userID} - PeerID: ${peerID}`;
+            document.getElementById('lblRTC').innerHTML =
+                `WebRTC: ${rtcState}`;
+            boxIn = document.getElementById('boxMediaIn');
+            boxInVideo = boxIn.getElementsByTagName('video');
+            boxInAudio = boxIn.getElementsByTagName('audio');
+            document.getElementById('lblMedia').innerHTML =
+                `Recv Audio: ${boxInAudio.length} - ` +
+                `Recv Video: ${boxInVideo.length}`;
+            document.getElementById('lblData').innerHTML =
+                `Data Channel: ${channels.length}`;
+        }
+
+        function setButtonDisabled(id, value) {
+            document.getElementById(id).disabled = value;
+        }
+
+        function setButtonText(id, value) {
+            document.getElementById(id).innerText = value;
+        }
+
+        function resetWebRTC() {
+            // ui
+            document.getElementById('boxMediaIn').innerHTML = '';
+            document.getElementById('boxMediaOut').innerHTML = '';
+
+            setButtonDisabled('btnRTCClose', true);
+
+            setButtonDisabled('btnSendRecv', true);
+            setButtonDisabled('btnSendOnly', true);
+            setButtonDisabled('btnRecvOnly', true);
+
+            setButtonDisabled('btnCreateOffer', true);
+            setButtonDisabled('btnCreateAnswer', true);
+            setButtonDisabled('btnSendSDP', true);
+
+            setButtonDisabled('btnSendIce', true);
+            setButtonText('btnSendIce', 'Send Ice To Peer');
+            setButtonDisabled('btnAddIce', true);
+            setButtonText('btnAddIce', 'Add Ice From Peer');
+            setButtonDisabled('btnRestartIce', true);
+
+            setButtonDisabled('btnRemoveTracks', true);
+            setButtonText('btnRemoveTracks', 'Remove all tracks');
+            setButtonDisabled('btnAddVideo', true);
+            setButtonDisabled('btnAddAudio', true);
+            setButtonDisabled('btnAddWebCam', true);
+            setButtonDisabled('btnAddMic', true);
+
+            setButtonDisabled('btnAddChannel', true);
+            setButtonDisabled('btnRemoveChannels', true);
+            setButtonText('btnRemoveChannels', 'Close All Channels');
+
+            // values
+            rtcState = '';
+            localCandidates = Array();
+            remoteCandidates = Array();
+            trackSenders = Array();
+            channels = Array(); // close all channels
+
+            // connection
+            if (pc != null) {
+                pc.close();
+                log('[System] Close previous peer connection');
+                pc = null;
+            }
+        }
+        
+        function resetWebSocket() {
+            resetWebRTC();
+
+            // ui
+            setButtonDisabled('btnWSClose', true);
+            setButtonDisabled('btnPing', true);
+            document.getElementById('log-panel').innerHTML = '';
+            document.getElementById('txtPeer').innerHTML = '';
+
+            // values
+            userID = '';
+            peerID = '';
+
+            // connection
+            if (websocket != null) {
+                websocket.close();
+                log('[System] Close previous web socket');
+                websocket = null;
+            }
+        }
+
+        function checkWebSocket() {
+            if (websocket == null) {
+                log('[System] [!] No websocket connection');
+                return false;
+            }
+            return true;
+        }
+
+        function initWebSocket() {
+            // reset
+            resetWebSocket();
+
+            // check support websocket
+            if (window.WebSocket == null) {
+                log('[System] [!] Browser does not support WebSocket');
+                return;
+            }
+
+            serverAddr = document.getElementById('txtWS').value;
+            try {
+                websocket = new WebSocket(serverAddr);
+            } catch (err) {
+                log(`[System] [!] Cannot create WebSocket instance: ${err.message}`);
+                return;
+            }
+            
+            log(`[WebSocket] New instance to: ${serverAddr}`);
+
+            // calbacks
+
+            websocket.onopen = (x) => {
+                log('[WebSocket] Connected');
+            }
+
+            websocket.onclose = (e) => {
+                log(`[WebSocket] Closed :${e.reason}`);
+            }
+
+            websocket.onmessage = function (event) {
+                wsHandler(event.data);
+            };
+
+            // ui
+            setButtonDisabled('btnWSClose', false);
+        }
+
+        function wsSendPeer(msg, peer) {
+            if (!checkWebSocket()) return;
+
+            log(`[WebSocket] Send message to ${peerID}: < ${msg.topic} > ${msg.body.length} bytes`);
+            if (peer != null) {
+                idx = peer;
+            } else {
+                idx = peerID;
+            }
+            try {
+                websocket.send(JSON.stringify({
+                    'action': 'send',
+                    'to': idx,
+                    'msg': msg,
+                }));
+            } catch(err) {
+                log(`[WebSocket] [!] Error while sending: ${err.message}`);
+            }
+        }
+
+        function wsHandler(data) {
+            try {
+                data = JSON.parse(data);    
+            } catch (err) {
+                log(`[WebSocket] [!] Error while parsing json data: ${err.message}`);
+                return;
+            }
+            
+            switch (data.action) {
+                case 'init':
+                    userID = data.id;
+                    log(`[WebSocket] My ID: ${userID}`);
+                    writeLabels();
+                    setButtonDisabled('btnPing', false);
+                    break;
+
+                case 'recv':
+                    peerID = data.from;
+                    writeLabels();
+
+                    msg = data.msg;
+                    log(`[WebSocket] Recv message from ${peerID}: < ${msg.topic} > ${msg.body.length} bytes`);
+                    switch (msg.topic) {
+                        case 'ping':
+                            wsSendPeer({
+                                'topic': 'pong',
+                                'body': '',
+                            });
+                            break;
+
+                        case 'sdp':
+                            setRemoteSDP(msg.body);
+                            break;
+
+                        case 'candidate':
+                            setRemoteIce(msg.body);
+                            break;
+                    }
+
+                    break;
+                
+                case 'error':
+                    log(`[WebSocket] [!] Error from server: ${data.msg}`);
+                    break;
+
+                default:
+                    log(`[WebSocket] [!] Unknown action: ${data.action}`);
+            }
+        }
+
+        function ping() {
+            wsSendPeer({
+                'topic': 'ping',
+                'body': '',
+            }, document.getElementById('txtPeer').value);
+            // expect pong, will update label later
+        }
+
+        function checkWebRTC() {
+            if (pc == null) {
+                log('[System] [!] No peer connection');
+                return false;
+            }
+            return true;
+        }
+
+        function initWebRTC() {
+            resetWebRTC();
+
+            // check support WebRTC
+            if (window.RTCPeerConnection == null) {
+                log('[System] [!] Browser does not support RTCPeerConnection');
+                return;
+            }
+
+            try {
+                pc = new RTCPeerConnection({
+                    iceServers: [{
+                        urls: 'stun:stun.l.google.com:19302'
+                    }]
+                });
+            } catch (err) {
+                log(`[System] [!] Cannot create RTCPeerConnection: ${err.message}`);
+            }
+
+            log('[WebRTC] Init new WebRTC instance');
+
+            // register callbacks
+
+            // https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/onaddstream
+
+            pc.onconnectionstatechange = e => {
+                conn = e.target;
+                log(`[WebRTC] OnConnectionStateChange - ${conn.connectionState}`);
+                rtcState = conn.connectionState;
+                writeLabels();
+            }
+
+            pc.ondatachannel = e => {
+                channel = e.channel;
+                log(`[WebRTC] OnDataChannel: ${channel.label}`);
+                channels.push(channel);
+                registerDataCallback(channel);
+                writeLabels();
+            }
+
+            pc.onicecandidate = e => {
+                if (event.candidate != null) {
+                    localCandidates.push(e.candidate);
+                    stCandidate = JSON.stringify(e.candidate);
+                    log(`[WebRTC] OnIceCandidate: ${stCandidate}`);
+                    if (websocket != null) {
+                        setButtonDisabled('btnSendIce', false);
+                        setButtonText('btnSendIce', `Send Ice To Peer (${localCandidates.length})`);
+                    }
+                }
+            }
+
+            pc.onicecandidateerror = e => {
+                log(`[WebRTC] OnIceCandidateError: ${e.errorCode}`);
+            }
+
+            pc.oniceconnectionstatechange = e => {
+                conn = e.target;
+                log(`[WebRTC] OnIceConnectionStateChange - ${conn.iceConnectionState}`);
+            }
+
+            pc.onicegatheringstatechange = e => {
+                conn = e.target;
+                log(`[WebRTC] OnIceGatheringStateChange - ${conn.iceGatheringState}`);
+            }
+
+            pc.onnegotiationneeded = e => {
+                log(`[WebRTC] OnNegotiationNeeded`);
+            }
+
+            // https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/onremovestream
+
+            pc.onsignalingstatechange = e => {
+                conn = e.target;
+                log(`[WebRTC] OnSignalingStateChange - ${conn.signalingState}`);
+            }
+
+            pc.ontrack = e => {
+                track = e.track;
+                log(`[WebRTC] OnTrack - ${track.kind} - ${track.label}`);
+
+                var mm = new MediaStream();
+                mm.addTrack(track);
+                el = document.createElement(track.kind);
+                el.autoplay = true;
+                el.controls = true;
+                el.playsinline = true;
+                el.srcObject = mm;
+                document.getElementById('boxMediaIn').appendChild(el);
+
+                log(`[WebRTC] Add new track to media stream: ${track.kind} - ${track.label}`);
+                writeLabels();
+            }
+
+            // enable possible ui
+            setButtonDisabled('btnRTCClose', false);
+
+            setButtonDisabled('btnSendRecv', false);
+            setButtonDisabled('btnSendOnly', false);
+            setButtonDisabled('btnRecvOnly', false);
+
+            setButtonDisabled('btnCreateOffer', false);
+            setButtonDisabled('btnCreateAnswer', false);
+
+            setButtonDisabled('btnRestartIce', false);
+
+            setButtonDisabled('btnAddVideo', false);
+            setButtonDisabled('btnAddAudio', false);
+            setButtonDisabled('btnAddWebCam', false);
+            setButtonDisabled('btnAddMic', false);
+
+            setButtonDisabled('btnAddChannel', false);
+        }
+
+        async function addTransceiver(direction) {
+            if (!checkWebRTC()) return;
+
+            kind = document.getElementById('txtKind').value;
+
+            if ('addTransceiver' in pc) {
+                await pc.addTransceiver(kind, {'direction': direction});
+                log(`[WebRTC] addTransceiver for ${kind} - ${direction}`);
+            } else {
+                log('[WebRTC] [!] Browser does not support addTransceiver');
+            }
+        }
+
+        async function createOffer() {
+            if (!checkWebRTC()) return;
+
+            try {
+                offer = await pc.createOffer({
+                    'offerToReceiveAudio': document.getElementById('chkOfferAudio').checked,
+                    'offerToReceiveVideo': document.getElementById('chkOfferVideo').checked,
+                });
+            } catch (err) {
+                log(`[WebRTC] [!] Create offer failed: ${err.message}`);
+                return;
+            }
+
+            log('[WebRTC] Create Offer');
+
+            await setLocalSDP(offer);
+        }
+
+        async function createAnswer() {
+            if (!checkWebRTC()) return;
+
+            try {
+                answer = await pc.createAnswer({});
+            } catch (err) {
+                log(`[WebRTC] [!] Create answer failed: ${err.message}`);
+                return;
+            }
+
+            log('[WebRTC] Create Answer');
+
+            await setLocalSDP(answer);
+        }
+
+        async function setLocalSDP(desc) {
+            try {
+                await pc.setLocalDescription(desc);
+            } catch (err) {
+                log(`[WebRTC] [!] Set Local Description failed: ${err.message}`);
+                return;
+            }
+            
+            log('[WebRTC] Set Local Description');
+
+            if (websocket != null) {
+                setButtonDisabled('btnSendSDP', false);
+            }
+        }
+
+        function sendSDP() {
+            if (!checkWebRTC()) return;
+
+            // https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Connectivity#Pending_and_current_descriptions
+            sdp = pc.localDescription;
+            if (sdp == null) {
+                log('[WebRTC] [!] No local session description set');
+                setButtonDisabled('btnSendSDP', true);
+                return;
+            }
+
+            // send local sdp to peer
+            wsSendPeer({
+                'topic': 'sdp',
+                'body': btoa(JSON.stringify(sdp))
+            });
+        }
+
+        async function setRemoteSDP(stSDP) {
+            if (!checkWebRTC()) return;
+
+            try {
+                sdp = new RTCSessionDescription(JSON.parse(atob(stSDP)));
+            } catch (err) {
+                log(`[System] [!] Error decoding json data of remote SDP: ${err.message}`);
+                return;
+            }
+
+            try {
+                await pc.setRemoteDescription(sdp);
+            } catch (err) {
+                log(`[WebRTC] [!] Set Remote Description failed: ${err.message}`);
+                return;
+            }
+            
+            log('[WebRTC] Set Remote Description');
+        }
+
+        function setRemoteIce(stIce) {
+            try {
+                candidate = new RTCIceCandidate(JSON.parse(atob(stIce)));
+            } catch (err) {
+                log(`[System] Json decode ice candidate failed: ${err.message}`);
+                return;
+            }
+
+            remoteCandidates.push(candidate);
+            setButtonDisabled('btnAddIce', false);
+            setButtonText('btnAddIce', `Add Ice From Peer (${remoteCandidates.length})`);
+        }
+
+        function sendIce() {
+            if (!checkWebSocket()) return;
+
+            // send my candidate to other peer
+            // suppose other will buffer candidate (before remote/local sdp set)
+            localCandidates.forEach(candidate => {
+                wsSendPeer({
+                    'topic': 'candidate',
+                    'body': btoa(JSON.stringify(candidate)),
+                });
+            });
+
+            log(`[WebSocket] Send total: ${localCandidates.length} candidates`);
+        }
+
+        function addIce() {
+            if (!checkWebRTC()) return;
+
+            remoteCandidates.forEach(async candidate => {
+                try {
+                    await pc.addIceCandidate(candidate);
+                } catch (err) {
+                    log(`[WebRTC] [!] Add remote candidate failed: ${err.message}`);
+                    log(JSON.stringify(candidate));
+                    return;
+                }
+                
+                log(`[WebRTC] Add remote candidate: ${JSON.stringify(candidate)}`);
+            })
+        }
+
+        function restartIce() {
+            if (!checkWebRTC()) return;
+
+            if ('restartIce' in pc) {
+                pc.restartIce();
+                log('[WebRTC] Restarting ICE');
+            } else {
+                log('[WebRTC] [!] Browser does not support restartIce');
+            }
+        }
+
+        async function addTrack(track) {
+            if (!checkWebRTC()) return;
+
+            try {
+                sender = await pc.addTrack(track);
+                trackSenders.push(sender);
+            } catch (err) {
+                log(`[WebRTC] [!] Add track failed ${track.kind} - ${track.label}: ${err.message}`);
+                return;
+            }
+            
+            log(`[WebRTC] Add track ${track.kind} - ${track.label}`);
+            setButtonDisabled('btnRemoveTracks', false);
+            setButtonText('btnRemoveTracks', `Remove all tracks (${trackSenders.length})`);
+        }
+
+        function captureStream(element) {
+            if ('captureStream' in element) {
+                return element.captureStream();
+            } else if ('mozCaptureStream' in element) {
+                return element.mozCaptureStream();
+            } else {
+                log('[System] [!] Browser does not support captureStream');
+            }
+            return null;
+        }
+
+        function addMediaCapture(element, kind, st) {
+            stream = captureStream(el);
+            if (stream != null) {
+                document.getElementById('boxMediaOut').append(element);
+                stream.getTracks().forEach(async track => {
+                    if (track.kind == kind) {
+                        await addTrack(track);
+                    }
+                });
+            }
+        }
+
+        function addMedia(kind) {
+            if (!checkWebRTC()) return;
+
+            el = document.createElement(kind);
+            el.crossOrigin="anonymous" 
+            el.src = 'https://webrtc.github.io/samples/src/video/chrome.webm';
+            el.controls = true;
+            el.playsinline = true;
+            el.muted = true;
+
+            el.oncanplay = () => {
+                addMediaCapture(el, kind);
+            }
+            if (el.readyState >= 3) {
+                addMediaCapture(el, kind);
+            }
+        }
+
+        async function addWebCam() {
+            if (!checkWebRTC()) return;
+
+            var stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        mandatory: {
+                            maxWidth: 320,
+                            maxHeight: 240,
+                        }
+                    }
+                });
+            } catch (err) {
+                log(`[System] [!] Cannot get webcam from getUserMedia: ${err.message}`);
+                return;
+            }
+
+            log(`[System] Number of video tracks: ${stream.getVideoTracks().length}`);
+            stream.getVideoTracks().forEach(addTrack);
+        }
+
+        async function addMic() {
+            if (!checkWebRTC()) return;
+
+            var stream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({audio: true});
+            } catch (err) {
+                log(`[System] [!] Cannot get microphone from getUserMedia: ${err.message}`);
+                return;
+            }
+
+            log(`[System] Number of audio tracks: ${stream.getAudioTracks().length}`);
+            stream.getAudioTracks().forEach(addTrack);
+        }
+
+        function removeTracks() {
+            if (!checkWebRTC()) return;
+
+            trackSenders.forEach(async sender => {
+                try {
+                    await pc.removeTrack(sender);
+                } catch (err) {
+                    log(`[WebRTC] [!] Remove sender failed: ${err.message}`);
+                    return;
+                }
+            });
+
+            log(`[System] Try to remove total ${trackSenders.length} tracks`);
+            trackSenders = Array();
+
+            setButtonDisabled('btnRemoveTracks', true);
+            setButtonText('btnRemoveTracks', 'Remove all tracks');
+            document.getElementById('boxMediaOut').innerHTML = '';
+        }
+
+
+        function addChannel() {
+            if (!checkWebRTC()) return;
+
+            if (!('createDataChannel' in pc)) {
+                log('[WebRTC] [!] Browser does not support createDataChannel');
+                return;
+            }
+
+            let r = Math.random().toString(36).substring(7);
+            var channel;
+            try {
+                channel = pc.createDataChannel(r);
+            } catch (err) {
+                log(`[WebRTC] [!] Create channel-${r} failed: ${err.message}`);
+                return;
+            }
+            
+            log(`[WebRTC] Create new data channel-${r}`);
+            channels.push(channel);
+            registerDataCallback(channel);
+            writeLabels();
+        }
+
+        function removeChannels() {
+            if (!checkWebRTC()) return;
+
+            channels.forEach(channel => {
+                try {
+                    channel.close();
+                } catch (err) {
+                    log(`[WebRTC] [!] Close channel-${channel.label} failed: ${err.message}`);
+                    return;
+                }
+                log(`[WebRTC] Close channel-${channel.label}`);
+            });
+
+            log(`[System] Try to close total ${channels.length} data channels`);
+            channels = Array();
+
+            setButtonDisabled('btnRemoveChannels', true);
+            setButtonText('btnRemoveChannels', `Close All Channels`);
+        }
+
+        function registerDataCallback(channel) {
+            if (channel == null) return;
+
+            channel.send2 = function (msg) {
+                log(`[DataChannel] > User: ${msg}`);
+                this.send(msg);
+            }
+
+            channel.onopen = (e) => {
+                log('[DataChannel] OnOpen');
+                channel.send2('ping');
+            }
+
+            channel.onerror = (e) => {
+                log('[DataChannel] OnError');
+            }
+
+            channel.onmessage = (m) => {
+                log(`[DataChannel] > Peer: ${m.data}`);
+                if (m.data == 'ping') {
+                    channel.send2('pong');
+                }
+            }
+
+            log('[DataChannel] Registered callbacks');
+            setButtonDisabled('btnRemoveChannels', false);
+            setButtonText('btnRemoveChannels', `Close All Channels (${channels.length})`);
+        }
+
+        function log(msg) {
+            xlog = document.getElementById("log-panel");
+            xlog.innerHTML += `${msg}<br>`;
+        }
+
+    </script>
+</body>
+
+</html>
