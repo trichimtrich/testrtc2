@@ -1,5 +1,20 @@
 # testrtc2
 
+**ToC**
+
+- [Intro](#intro)
+- [Features](#features)
+- [Components](#components)
+    - [Signal server](#signal-server)
+    - [Web client](#web-client)
+    - [Golang client](#golang-client)
+    - [Flutter/dart client](#flutterdart-client)
+- [Usage](#usage)
+- [Notes](#notes)
+- [TODO](#todo)
+
+## Intro
+
 Another test clients for [WebRTC](https://webrtc.org/), included multiple clients implemented in
 - Vanila JS - works on all modern browsers (Chromium + Firefox + Safari)
 - Golang with [pion](https://github.com/pion/webrtc) library - works on any Desktop OS
@@ -8,6 +23,8 @@ Another test clients for [WebRTC](https://webrtc.org/), included multiple client
 The old repo [testrtc](https://github.com/trichimtrich/testrtc) was made to do blackbox connectivity test/experiment between nodes (behide NAT, dockerize environment, other locations, ...)
 
 With this repo, we aim to experiment the compatibility/functionality between clients.
+
+
 
 ## Features
 
@@ -144,6 +161,14 @@ This client uses a wrapper for WebRTC
 
 If you are facing the problem run in Firefox or Safari with this flutter web app, because there is an issue with `dart:html` (by the commit timestamp of this README)
 - https://github.com/dart-lang/sdk/issues/38787
+
+## Usage
+
+1. Run Signal server first
+2. Connect 2 peers to Signal server
+3. From 1 peer ping to other peer (by their IDs), so both parties know each others
+4. In Web client, you have to create PeerConnection manually (intended)
+5. Do whatever test you want to...
 
 ## Notes
 
